@@ -17,6 +17,8 @@ import subprocess
 import sys
 from textwrap import dedent
 
+PY2 = (sys.version_info[0] == 2)
+
 TOP_DIR = os.path.realpath(os.path.dirname(__file__))
 SRC_DIR = os.path.join(TOP_DIR, 'caffe2')
 
@@ -161,7 +163,6 @@ packages = []
 install_requires.extend(['protobuf',
                          'numpy',
                          'flask',
-                         'future',
                          'graphviz',
                          'hypothesis',
                          'jupyter',
@@ -175,6 +176,9 @@ install_requires.extend(['protobuf',
                          'setuptools',
                          'six',
                          'tornado'])
+
+if PY2:
+    install_requires.append('future')
 
 ################################################################################
 # Test

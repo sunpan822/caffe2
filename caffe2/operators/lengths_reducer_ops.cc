@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include "caffe2/operators/lengths_reducer_ops.h"
 #include "caffe2/core/context.h"
 #include "caffe2/core/operator.h"
@@ -34,5 +18,39 @@ REGISTER_CPU_OPERATOR_STR(
 REGISTER_CPU_OPERATOR_STR(
     "SparseLengthsMean",
     CPUSparseLengthsReductionOp<float, TensorTypes<float, float16>, 0, 1>);
+
+OPERATOR_SCHEMA(SparseLengthsPositionalWeightedSum)
+    .NumInputs(4)
+    .NumOutputs(1)
+    .SetDoc(R"DOC(
+Variation of SparseLengthsWeightedSum operator, where, for each row,
+weights are accessed by indices [0..L-1], where L is the length of given row.
+This is basically a fused operator of LengthsRangeFill + Gather +
+SparseWeightedSum
+)DOC")
+    .Input(
+        0,
+        "DATA",
+        "uint8 tensor obtained with "
+        "operator FloatToRowwiseQuantized8Bits")
+    .Input(
+        1,
+        "WEIGHT",
+        "Scalar multipliers for the input slices. Must "
+        "be a vector with the length matching the length of DATA")
+    .Input(
+        2,
+        "INDICES",
+        "Integer vector containing indices of the first "
+        "dimension of DATA for the slices that are being aggregated")
+    .Input(
+        3,
+        "LENGTHS",
+        "Vector with the same sum of elements as the first dimension of DATA")
+    .Output(0, "output", "output");
+
+REGISTER_CPU_OPERATOR_STR(
+    "SparseLengthsPositionalWeightedSum",
+    CPUSparseLengthsReductionOp<float, TensorTypes<float, float16>, 1, 0, 1>);
 
 } // namespace caffe2

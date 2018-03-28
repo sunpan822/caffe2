@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include "caffe2/operators/one_hot_ops.h"
 
 #include "caffe2/core/operator.h"
@@ -61,6 +45,28 @@ bool BatchOneHotOp<CPUContext>::DoRunWithType() {
   }
 
   return true;
+}
+
+vector<TensorShape> TensorInferenceForBatchOneHot(
+    const OperatorDef& /* def */,
+    const vector<TensorShape>& in) {
+  std::vector<TIndex> output_dims(2);
+  output_dims[0] = in[0].dims(0); // N
+  output_dims[1] = in[2].dims(0); // vals.size()
+  return vector<TensorShape>{
+      CreateTensorShape(vector<TIndex>{output_dims}, in[0].data_type())};
+}
+
+OpSchema::Cost CostInferenceForBatchOneHot(
+    const OperatorDef& def,
+    const vector<TensorShape>& in) {
+  struct OpSchema::Cost c;
+  const TensorShape output = TensorInferenceForBatchOneHot(def, in)[0];
+
+  c.flops = 0;
+  c.bytes_moved = output.dims(0) * output.dims(1) * sizeof(int32_t);
+  c.params_bytes = 0;
+  return c;
 }
 
 template <>
@@ -225,7 +231,10 @@ of one-hot encoding for each column. For example
     .Output(
         0,
         "output",
-        "output matrix that expands each input column with one hot encoding");
+        "output matrix that expands each input column with one hot encoding")
+    .TensorInferenceFunction(TensorInferenceForBatchOneHot)
+    .CostInferenceFunction(
+        OpSchema::CostInferenceFunctionType(CostInferenceForBatchOneHot));
 
 OPERATOR_SCHEMA(OneHot)
     .NumInputs(2)

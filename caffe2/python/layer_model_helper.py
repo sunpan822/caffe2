@@ -1,18 +1,3 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 ## @package layer_model_helper
 # Module caffe2.python.layer_model_helper
 from __future__ import absolute_import
@@ -20,7 +5,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from caffe2.python import core, model_helper, schema, scope
+from caffe2.python import core, model_helper, schema, scope, utils
 from caffe2.python.modeling.parameter_info import (
     ParameterInfo,
 )
@@ -179,17 +164,6 @@ class LayerModelHelper(model_helper.ModelHelper):
         # if the name was already registered in global_constants, it will not be
         # added even if the intended value is different from its original value
 
-        def op_equal(operator1, operator2):
-            o1 = copy.deepcopy(operator1)
-            o2 = copy.deepcopy(operator2)
-            # debug_info is supposed to be different, and we don't need to
-            # compare debug_info
-            if hasattr(o1, 'debug_info'):
-                o1.debug_info = ''
-            if hasattr(o2, 'debug_info'):
-                o2.debug_info = ''
-            return o1 == o2
-
         if name in self.global_constants:
             blob_name = self.global_constants[name]
             initializer_op = \
@@ -198,8 +172,11 @@ class LayerModelHelper(model_helper.ModelHelper):
                 )
             # check if the original initializer is the same as the one intended
             # now
-            assert op_equal(initializer_op,
-                            self.global_constant_initializers[blob_name]), \
+            assert utils.OpAlmostEqual(
+                initializer_op,
+                self.global_constant_initializers[blob_name],
+                'debug_info'
+            ), \
                 "conflict initializers for global constant %s, " \
                 "previous %s, now %s" % (
                     blob_name, str(initializer_op),
@@ -462,6 +439,24 @@ class LayerModelHelper(model_helper.ModelHelper):
         self._trainer_extra_schema += trainer_extra_record
 
     def __getattr__(self, layer):
+        def is_functional_layer(layer):
+            if core.IsOperator(layer):
+                return True
+            elif layer.startswith('FunctionalLayer'):
+                return True
+            else:
+                return False
+
+        def resolve_functional_layer(layer):
+            if core.IsOperator(layer):
+                return layer
+            elif layer.startswith('FunctionalLayer'):
+                return layer[len('FunctionalLayer'):]
+            else:
+                raise ValueError(
+                    '%s cannot be resolved as functional layer' % layer
+                )
+
         if layer.startswith('__'):
             raise AttributeError(layer)
 
@@ -475,7 +470,11 @@ class LayerModelHelper(model_helper.ModelHelper):
                     new_layer.export_params_for_metrics()
                 return self.add_layer(new_layer)
             return wrapper
-        elif core.IsOperator(layer):
+        elif is_functional_layer(layer):
+            # TODO(xlwang): Desginated layer shadows the usage of an op as a
+            # single layer. To enforce using an op (e.g. Split) as functional
+            # layer, one can call 'model.FunctionalLayerSplit'
+            layer = resolve_functional_layer(layer)
             def wrapper(*args, **kwargs):
                 def apply_operator(net, in_record, out_record, **kwargs):
                     # TODO(amalevich): Switch to net.operator as soon as it gets
@@ -545,8 +544,11 @@ class LayerModelHelper(model_helper.ModelHelper):
         grad_map,
         blob_to_device=None,
     ):
+        param_grad_map = {param: grad_map[param]
+            for param in self.param_to_optim.keys() if param in grad_map}
+
         for modifier in self._post_grad_net_modifiers:
-            modifier(trainer_net, trainer_init_net, grad_map,
+            modifier(trainer_net, trainer_init_net, param_grad_map,
                      blob_to_device=blob_to_device)
 
     def apply_final_net_modifiers(

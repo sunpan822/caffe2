@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #pragma once
 
 #include "caffe2/core/common.h"
@@ -39,14 +23,18 @@ namespace caffe2 {
  *   for (j = 0..lengths[i]-1)
  *     for (k = 0..block_size-1)
  *       out[i*block_size + k] += input[indices[pos]*block_size + k] *
- *                                (weights ? weights[pos] : 1.0)
+ *           (weights ? weights[IS_WEIGHT_POSITIONAL ? j : pos] : 1.0)
  *     pos += 1
  *   if (normalize_weights && lengths[i] > 0)
  *     for (k = 0..block_size-1)
  *       out[i*block_size + k] /= lengths[i]
  *
  */
-template <typename IndexType, typename InType, typename OutType>
+template <
+    typename IndexType,
+    typename InType,
+    typename OutType,
+    bool IS_WEIGHT_POSITIONAL = false>
 void EmbeddingLookup(
     const TIndex block_size,
     const TIndex output_size,

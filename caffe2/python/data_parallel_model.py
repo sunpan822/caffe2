@@ -1,18 +1,3 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 ## @package data_parallel_model
 # Module caffe2.python.data_parallel_model
 from __future__ import absolute_import
@@ -697,11 +682,12 @@ barrier_instance = 0
 
 
 def Synchronize(model, timeout_sec=_DEFAULT_TIMEOUT_SEC):
+    if model._rendezvous is None or model._rendezvous['num_shards'] <= 1:
+        # Single host case
+        return
+
     log.info("Creating synchronization barrier net")
-    assert model._rendezvous is not None, "Missing rendezvous"
     assert model._rendezvous['engine'] == 'GLOO', "Engine does not support barrier"
-    assert model._rendezvous['num_shards'] > 1, \
-        "synchronization barrier requires multiple shards"
     global barrier_instance
     instance = barrier_instance
     barrier_instance += 1

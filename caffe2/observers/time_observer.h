@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #ifndef CAFFE2_CONTRIB_OBSERVERS_TIME_OBSERVER_H_
 #define CAFFE2_CONTRIB_OBSERVERS_TIME_OBSERVER_H_
 
@@ -25,6 +9,7 @@
 #include "caffe2/core/operator.h"
 #include "caffe2/core/timer.h"
 #include "caffe2/observers/operator_attaching_net_observer.h"
+#include "caffe2/operators/rnn/rnn_capable_operator_observer.h"
 
 namespace caffe2 {
 
@@ -44,19 +29,16 @@ class TimeCounter {
 };
 
 class TimeOperatorObserver final : public TimeCounter,
-                                   public ObserverBase<OperatorBase> {
+                                   public RNNCapableOperatorObserver {
  public:
   explicit TimeOperatorObserver(OperatorBase* subject) = delete;
   explicit TimeOperatorObserver(
       OperatorBase* subject,
       TimeObserver* /* unused */)
-      : ObserverBase<OperatorBase>(subject) {}
-
-  std::unique_ptr<ObserverBase<OperatorBase>> copy(
-      OperatorBase* subject) override {
-    return std::unique_ptr<ObserverBase<OperatorBase>>(
-        new TimeOperatorObserver(subject, nullptr));
-  }
+      : RNNCapableOperatorObserver(subject) {}
+  std::unique_ptr<ObserverBase<OperatorBase>> rnnCopy(
+      OperatorBase* subject,
+      int rnn_order) const override;
 
  private:
   void Start() override;

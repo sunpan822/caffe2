@@ -1,27 +1,15 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include "caffe2/core/logging.h"
 #include "caffe2/core/operator.h"
 #include "caffe2/onnx/backend.h"
 #include "caffe2/onnx/device.h"
 #include "caffe2/onnx/helper.h"
+#include "caffe2/utils/map_utils.h"
+#include "caffe2/utils/proto_utils.h"
+
+#if !CAFFE2_MOBILE
 #include "onnx/checker.h"
-#include "onnx/defs/schema.h"
 #include "onnx/optimizer/optimize.h"
+#endif
 
 #include "google/protobuf/io/coded_stream.h"
 #include "google/protobuf/io/zero_copy_stream_impl_lite.h"
@@ -72,18 +60,6 @@ bool IsOperator(const std::string& op_type) {
   return ops_->count(caffe2::OpRegistryKey(op_type, "DEFAULT"));
 }
 
-// TODO We probably should have only one copy of this function (copied from
-// pybind_state.cc)
-bool ParseProtobufFromLargeString(
-    const std::string& str,
-    ::google::protobuf::Message* proto) {
-  ::google::protobuf::io::ArrayInputStream input_stream(str.data(), str.size());
-  ::google::protobuf::io::CodedInputStream coded_stream(&input_stream);
-  // Set PlanDef message size limit to 1G.
-  coded_stream.SetTotalBytesLimit(1024LL << 20, 512LL << 20);
-  return proto->ParseFromCodedStream(&coded_stream);
-}
-
 caffe2::DeviceOption GetDeviceOption(const Device& onnx_device) {
   static const std::unordered_map<DeviceType, caffe2::DeviceType> m = {
       {DeviceType::CPU, caffe2::DeviceType::CPU},
@@ -94,6 +70,7 @@ caffe2::DeviceOption GetDeviceOption(const Device& onnx_device) {
   return d;
 }
 
+#if !CAFFE2_MOBILE
 ModelProto OptimizeOnnx(const ModelProto& input, bool init) {
   std::vector<std::string> passes{"fuse_consecutive_transposes",
                                   "eliminate_nop_transpose",
@@ -106,6 +83,7 @@ ModelProto OptimizeOnnx(const ModelProto& input, bool init) {
   }
   return ::ONNX_NAMESPACE::optimization::Optimize(input, passes);
 }
+#endif
 
 template <class T, class U>
 U LookUpWithDefault(
@@ -118,12 +96,6 @@ U LookUpWithDefault(
   } else {
     return it->second;
   }
-}
-
-const ::ONNX_NAMESPACE::OpSchema& GetOnnxSchema(const std::string& key) {
-  const auto* schema = ::ONNX_NAMESPACE::OpSchemaRegistry::Schema(key);
-  CAFFE_ENFORCE(schema, "No ONNX schema registered for '" + key + "'!");
-  return *schema;
 }
 
 void UpdateNames(const caffe2::OperatorDef& op) {
@@ -868,7 +840,7 @@ Caffe2Ops Caffe2Backend::CommonOnnxNodeToCaffe2Ops(
   c2_op->set_name(node.name());
 
   const auto onnx_op_type = node.op_type();
-  auto broken_version = LookUpWithDefault(
+  auto broken_version = caffe2::get_default(
       get_broken_operators(), onnx_op_type, std::numeric_limits<int>::max());
   if (broken_version <= opset_version) {
     CAFFE_THROW(
@@ -880,7 +852,7 @@ Caffe2Ops Caffe2Backend::CommonOnnxNodeToCaffe2Ops(
         broken_version);
   }
   c2_op->set_type(
-      LookUpWithDefault(get_renamed_operators(), onnx_op_type, onnx_op_type));
+      caffe2::get_default(get_renamed_operators(), onnx_op_type, onnx_op_type));
   if (!IsOperator(c2_op->type())) {
     CAFFE_THROW(
         "Don't know how to translate op ", onnx_op_type);
@@ -911,7 +883,7 @@ Caffe2Ops Caffe2Backend::ConvertNode(
     int opset_version) {
   ::google::protobuf::RepeatedPtrField<NodeProto> nodes;
   auto* n = nodes.Add();
-  ParseProtobufFromLargeString(node_str, n);
+  ParseProtoFromLargeString(node_str, n);
   ModelProto init_model;
   ModelProto pred_model;
   OnnxNode onnx_node = OnnxNode(nodes.Get(0));
@@ -941,9 +913,14 @@ void Caffe2Backend::OnnxToCaffe2(
     const std::vector<Caffe2Ops>& extras) {
   auto device_option = GetDeviceOption(Device(device));
 
+#if !CAFFE2_MOBILE
   ModelProto init_model = OptimizeOnnx(onnx_model, true);
-
   ModelProto pred_model = OptimizeOnnx(onnx_model, false);
+#else
+  ModelProto init_model = ModelProto();
+  ModelProto pred_model = onnx_model;
+  pred_model.mutable_graph()->mutable_initializer()->Clear();
+#endif
 
   init_net->set_name(onnx_model.graph().name() + "_init");
   pred_net->set_name(onnx_model.graph().name() + "_predict");
@@ -1020,8 +997,11 @@ Caffe2BackendRep* Caffe2Backend::Prepare(
     const std::vector<Caffe2Ops>& extras) {
   Caffe2BackendRep* rep = new Caffe2BackendRep();
   ModelProto onnx_model;
-  ParseProtobufFromLargeString(onnx_model_str, &onnx_model);
+  ParseProtoFromLargeString(onnx_model_str, &onnx_model);
+
+#if !CAFFE2_MOBILE
   ::ONNX_NAMESPACE::checker::check_model(onnx_model);
+#endif
 
   int opset_version = -1;
   for (const auto& imp : onnx_model.opset_import()) {

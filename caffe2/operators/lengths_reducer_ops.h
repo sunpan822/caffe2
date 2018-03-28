@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #pragma once
 #include "caffe2/core/context.h"
 #include "caffe2/core/operator.h"
@@ -26,7 +10,10 @@ template <
     typename T, // output type
     class InputTypes, // supported input types, such as TensorTypes<float>
     bool USE_WEIGHT = 0, // Whether it is SparseLengthsWeightedSum
-    bool USE_MEAN = 0 // Whether this is SparseLengthsMean
+    bool USE_MEAN = 0, // Whether this is SparseLengthsMean
+    bool USE_POSITIONAL_WEIGHT = 0
+    // USE_WEIGHT = 1 and USE_POSITIONAL_WEIGHT = 1
+    // -> SparseLengthsPositionalWeightedSum
     >
 class CPUSparseLengthsReductionOp : public Operator<CPUContext> {
  public:
@@ -76,18 +63,21 @@ class CPUSparseLengthsReductionOp : public Operator<CPUContext> {
     const int* lengths = lengthsInput.template data<int>();
     const T* in_weight = nullptr;
 
-    if (USE_WEIGHT) { // static if
+    if (USE_WEIGHT) {
+      // static if
       auto& weightInput = Input(WEIGHT);
       CAFFE_ENFORCE_EQ(1, weightInput.ndim(), "WEIGHT must be a vector");
-      CAFFE_ENFORCE_EQ(
-          weightInput.size(),
-          indices_size,
-          "Weight should have the same length as indices.");
+      if (!USE_POSITIONAL_WEIGHT) {
+        CAFFE_ENFORCE_EQ(
+            weightInput.size(),
+            indices_size,
+            "Weight should have the same length as indices.");
+      }
       in_weight = weightInput.template data<T>();
     }
 
     // delegate work to perfkernel that branches based on architecture
-    EmbeddingLookup(
+    EmbeddingLookup<IndexType, InputType, T, USE_POSITIONAL_WEIGHT>(
         D,
         M,
         indices_size,

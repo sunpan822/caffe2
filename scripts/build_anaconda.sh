@@ -77,7 +77,7 @@ fi
 #
 # Pick the correct conda-build folder
 #
-CAFFE2_CONDA_BUILD_DIR="${CAFFE2_ROOT}/conda"
+CAFFE2_CONDA_BUILD_DIR="${CAFFE2_ROOT}/conda/caffe2"
 if [[ "${BUILD_ENVIRONMENT}" == *full* ]]; then
   CAFFE2_CONDA_BUILD_DIR="${CAFFE2_CONDA_BUILD_DIR}/cuda_full"
 elif [[ "${BUILD_ENVIRONMENT}" == *cuda* ]]; then
@@ -146,6 +146,7 @@ if [[ "$(uname)" != 'Darwin' ]]; then
       # opencv 3.1.0 for python 3 requires numpy 1.12
       add_package 'numpy' '>1.11'
     fi
+    CONDA_BUILD_ARGS+=(" -c conda-forge")
 
   else
     # gflags 2.2.1 is built against the new ABI but gflags 2.2.0 is not
@@ -180,6 +181,7 @@ fi
 
 
 #
+
 # Build Caffe2 with conda-build
 #
 # If --user and --token are set, then this will also upload the built package

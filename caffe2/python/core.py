@@ -1,18 +1,3 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 ## @package core
 # Module caffe2.python.core
 from __future__ import absolute_import
@@ -148,6 +133,13 @@ def InferOpBlobDevices(op):
         device_option.ParseFromString(dev_str)
         output_info.append(device_option)
     return input_info, output_info
+
+
+def InferOpDeviceAsBlobDevices(op):
+    op_dev = op.device_option if op.device_option else caffe2_pb2.DeviceOption()
+    input_dev = [op_dev] * len(op.input)
+    output_dev = [op_dev] * len(op.output)
+    return input_dev, output_dev
 
 
 GradientSlice = namedtuple('GradientSlice', ['indices', 'values'])
@@ -2187,6 +2179,21 @@ def device_equal(src, dst):
     return src.device_type == dst.device_type and src.cuda_gpu_id == dst.cuda_gpu_id
 
 
+def update_placeholder_op_output(op, blob_to_device):
+    '''
+    Placeholder ops (for e.g. Recv) always runs on CPU. So ensure their
+    output blobs reside on CPU.
+    '''
+    outputs = []
+    for output in op.output:
+        blob_dev = blob_to_device[output]
+        if blob_dev.device_type != caffe2_pb2.CPU:
+            output += '_cpu'
+        outputs.append(output)
+    del op.output[:]
+    op.output.extend(outputs)
+
+
 class RemapEntry:
     def __init__(self, blob, device):
         self.blob = blob
@@ -2199,7 +2206,8 @@ class RemapEntry:
         return hash(self.blob + str(self.device))
 
 
-def InjectCrossDeviceCopies(net, blob_to_device=None, blob_remap=None):
+def InjectCrossDeviceCopies(net, blob_to_device=None, blob_remap=None,
+                            placeHolderOps=None):
     '''
     Injecting Copy functions between device within a net. Users can provide
     a net with part of operators using different device_options. This method
@@ -2242,8 +2250,14 @@ def InjectCrossDeviceCopies(net, blob_to_device=None, blob_remap=None):
 
     for op in net._net.op:
         temp_remap.clear()
-        # Get where inputs and outputs should be
-        input_dev, output_dev = InferOpBlobDevices(op)
+        # Get where inputs and outputs should be. If it is a Placeholder
+        # (i.e. fake) op, then set op's device as blob's devices.
+        input_dev = None
+        output_dev = None
+        if placeHolderOps is not None and op.type in placeHolderOps:
+            input_dev, output_dev = InferOpDeviceAsBlobDevices(op)
+        else:
+            input_dev, output_dev = InferOpBlobDevices(op)
 
         for dev, input in zip(input_dev, op.input):
             assert net.BlobIsDefined(input), \
@@ -2288,19 +2302,22 @@ def InjectCrossDeviceCopies(net, blob_to_device=None, blob_remap=None):
                     temp_remap[input] = new_name
                     blob_to_device[new_name] = dev
 
+        if placeHolderOps is not None and op.type in placeHolderOps:
+            update_placeholder_op_output(op, blob_to_device)
+
         # Enforcing no reuse blob between operators. In-place blob usage in an
         # op is allowed. This is based on the assumption that in-place op has
         # same device info
-        for out_blob, device in zip(op.output, output_dev):
-            if out_blob in blob_to_device and (
-                out_blob not in op.input and
-                not device_equal(blob_to_device[out_blob], device)
+        for dev, output in zip(output_dev, op.output):
+            if output in blob_to_device and (
+                output not in op.input and
+                not device_equal(blob_to_device[output], dev)
             ):
                 raise RuntimeError(
                     "In-place blob: {} is not supported between operators "
                     "with different device option previous:{} now: {}. "
                     "Failed op:\n {}".format(
-                        out_blob, blob_to_device[out_blob], device, op
+                        output, blob_to_device[output], dev, op
                     )
                 )
         new_op = caffe2_pb2.OperatorDef()

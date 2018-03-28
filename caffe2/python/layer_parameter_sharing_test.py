@@ -1,24 +1,9 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from caffe2.python import scope
+from caffe2.python import core, scope
 from caffe2.python.modeling.parameter_sharing import (
     ParameterSharing,
 )
@@ -134,3 +119,32 @@ class ParameterSharingTest(LayersTestCase):
                         self.model.input_feature_schema.float_features,
                         output_dims + 1
                     )
+
+    def test_layer_duplicated_parameter_init(self):
+        output_dims = 2
+        with scope.NameScope('global_scope'):
+            with ParameterSharing({'new_fc': 'shared_fc'}):
+                self.model.FC(
+                    self.model.input_feature_schema.float_features,
+                    output_dims,
+                    name='shared_fc'
+                )
+                self.model.FC(
+                    self.model.input_feature_schema.float_features,
+                    output_dims,
+                    name='new_fc'
+                )
+
+        train_init_net = core.Net('train_init_net')
+        train_net = core.Net('train_net')
+        for layer in self.model.layers:
+            layer.add_operators(train_net, train_init_net)
+        op_outputs = []
+        for op in train_init_net._net.op:
+            op_outputs.extend(op.output)
+
+        # only fill these parameter blobs once
+        self.assertEquals(
+            sorted(op_outputs),
+            ['global_scope/shared_fc/b', 'global_scope/shared_fc/w']
+        )

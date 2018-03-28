@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include <cub/block/block_reduce.cuh>
 #include <cub/device/device_reduce.cuh>
 #include <cub/device/device_scan.cuh>
@@ -330,7 +314,17 @@ class CUDASparseLengthsSumOp : public Operator<CUDAContext> {
     // Either first dim the data or how much we pull in indexies from it
     TIndex dataToReduceSize;
     const TIndex outputSize = lengthsInput.dim(0);
-    int len_length = outputSize;
+    const int len_length = outputSize;
+
+    auto shape = dataInput.dims();
+    shape[0] = outputSize;
+    output->Resize(shape);
+    T* out_data = output->template mutable_data<T>();
+
+    if (len_length <= 0) {
+      // return early to avoid invalid empty kernel
+      return true;
+    }
 
     const IndexType* indices;
     if (SparseFused) { // static if
@@ -342,10 +336,6 @@ class CUDASparseLengthsSumOp : public Operator<CUDAContext> {
       dataToReduceSize = dataSize;
     }
 
-    auto shape = dataInput.dims();
-    shape[0] = outputSize;
-    output->Resize(shape);
-
     // only compute this the first time
     inclusive_scan_length_buffer_.ResizeLike(lengthsInput);
     inclusive_scan_wrapper(
@@ -356,7 +346,6 @@ class CUDASparseLengthsSumOp : public Operator<CUDAContext> {
         &context_);
 
     const T* in_data = dataInput.template data<T>();
-    T* out_data = output->template mutable_data<T>();
     auto* prefix_sum_length_data =
         inclusive_scan_length_buffer_.template data<int>();
     int N = dataSize;
@@ -449,6 +438,12 @@ class CUDASparseLengthsWeightedSumOp : public Operator<CUDAContext> {
     auto shape = dataInput.dims();
     shape[0] = outputSize;
     output->Resize(shape);
+    T* out_data = output->template mutable_data<T>();
+
+    if (len_length <= 0) {
+      // return early to avoid invalid empty kernel
+      return true;
+    }
 
     inclusive_scan_length_buffer_.ResizeLike(lengthsInput);
     inclusive_scan_wrapper(
@@ -461,7 +456,6 @@ class CUDASparseLengthsWeightedSumOp : public Operator<CUDAContext> {
     const IndexType* indices = indicesInput.template data<IndexType>();
     const T* in_data = dataInput.template data<T>();
     const T* in_weights = weightsInput.template data<T>();
-    T* out_data = output->template mutable_data<T>();
     auto* prefix_sum_length_data =
         inclusive_scan_length_buffer_.template data<int>();
     int N = dataSize;
@@ -915,9 +909,21 @@ class CUDASparseLengthsSumGradientWithIndicesOp : public Operator<CUDAContext> {
     auto& indicesInput = Input(2);
     auto* dataGradsOutput = Output(0);
     CAFFE_ENFORCE_EQ(1, lengthsInput.ndim(), "LENGTHS must be a vector");
-    int len_length = lengthsInput.dim(0);
+
+    const int len_length = lengthsInput.dim(0);
     CAFFE_ENFORCE(segmentGradsInput.ndim() > 0);
     CAFFE_ENFORCE(len_length == segmentGradsInput.dim(0));
+
+    auto shape = segmentGradsInput.dims();
+    int output_0dim = indicesInput.dim(0);
+    shape[0] = output_0dim;
+    dataGradsOutput->Resize(shape);
+    T* out_data = dataGradsOutput->template mutable_data<T>();
+
+    if (len_length <= 0) {
+      // return early to avoid invalid empty kernel
+      return true;
+    }
 
     inclusive_scan_length_buffer_.ResizeLike(lengthsInput);
     inclusive_scan_wrapper(
@@ -931,13 +937,7 @@ class CUDASparseLengthsSumGradientWithIndicesOp : public Operator<CUDAContext> {
     auto* prefix_sum_length_data =
         inclusive_scan_length_buffer_.template data<int>();
 
-    auto shape = segmentGradsInput.dims();
-    int output_0dim = indicesInput.dim(0);
-    shape[0] = output_0dim;
-    dataGradsOutput->Resize(shape);
-
     const T* in_data = segmentGradsInput.template data<T>();
-    T* out_data = dataGradsOutput->template mutable_data<T>();
 
     int N = output_0dim;
     int post = segmentGradsInput.size_from_dim(1);
@@ -988,9 +988,20 @@ class CUDASparseLengthsWeightedSumGradientWithIndicesOp
     auto* dataGradsOutput = Output(0);
     CAFFE_ENFORCE_EQ(1, lengthsInput.ndim(), "LENGTHS must be a vector");
     CAFFE_ENFORCE_EQ(1, weightsInput.ndim(), "WEIGHTS must be a vector");
-    int len_length = lengthsInput.dim(0);
+
+    const int len_length = lengthsInput.dim(0);
     CAFFE_ENFORCE(segmentGradsInput.ndim() > 0);
     CAFFE_ENFORCE(len_length == segmentGradsInput.dim(0));
+
+    auto shape = segmentGradsInput.dims();
+    int output_0dim = indicesInput.dim(0);
+    shape[0] = output_0dim;
+    dataGradsOutput->Resize(shape);
+    T* out_data = dataGradsOutput->template mutable_data<T>();
+    if (len_length <= 0) {
+      // return early to avoid invalid empty kernel
+      return true;
+    }
 
     inclusive_scan_length_buffer_.ResizeLike(lengthsInput);
     inclusive_scan_wrapper(
@@ -1004,14 +1015,8 @@ class CUDASparseLengthsWeightedSumGradientWithIndicesOp
     auto* prefix_sum_length_data =
         inclusive_scan_length_buffer_.template data<int>();
 
-    auto shape = segmentGradsInput.dims();
-    int output_0dim = indicesInput.dim(0);
-    shape[0] = output_0dim;
-    dataGradsOutput->Resize(shape);
-
     const T* in_data = segmentGradsInput.template data<T>();
     const T* in_weights = weightsInput.template data<T>();
-    T* out_data = dataGradsOutput->template mutable_data<T>();
 
     int N = output_0dim;
     int post = segmentGradsInput.size_from_dim(1);
@@ -1079,9 +1084,23 @@ class CUDASparseLengthsIndicesInGradientWeightedSumWithMainInputGradientOp
     auto* weightGradsOutput = Output(1);
     CAFFE_ENFORCE_EQ(1, lengthsInput.ndim(), "LENGTHS must be a vector");
     CAFFE_ENFORCE_EQ(1, weightsInput.ndim(), "WEIGHTS must be a vector");
-    int len_length = lengthsInput.dim(0);
+
+    const int len_length = lengthsInput.dim(0);
     CAFFE_ENFORCE(segmentGradsInput.ndim() > 0);
     CAFFE_ENFORCE(len_length == segmentGradsInput.dim(0));
+
+    auto shape = segmentGradsInput.dims();
+    int output_0dim = indicesInput.dim(0);
+    shape[0] = output_0dim;
+    dataGradsOutput->Resize(shape);
+    weightGradsOutput->ResizeLike(indicesInput);
+    T* out_data_grads = dataGradsOutput->template mutable_data<T>();
+    T* out_weight_grads = weightGradsOutput->template mutable_data<T>();
+
+    if (len_length <= 0) {
+      // return early to avoid invalid empty kernel
+      return true;
+    }
 
     inclusive_scan_length_buffer_.ResizeLike(lengthsInput);
     inclusive_scan_wrapper(
@@ -1095,18 +1114,10 @@ class CUDASparseLengthsIndicesInGradientWeightedSumWithMainInputGradientOp
     auto* prefix_sum_length_data =
         inclusive_scan_length_buffer_.template data<int>();
 
-    auto shape = segmentGradsInput.dims();
-    int output_0dim = indicesInput.dim(0);
-    shape[0] = output_0dim;
-    dataGradsOutput->Resize(shape);
-    weightGradsOutput->ResizeLike(indicesInput);
-
     const T* in_data = dataInput.template data<T>();
     const T* in_grads = segmentGradsInput.template data<T>();
     const T* in_weights = weightsInput.template data<T>();
     const IndexType* indices = indicesInput.template data<IndexType>();
-    T* out_data_grads = dataGradsOutput->template mutable_data<T>();
-    T* out_weight_grads = weightGradsOutput->template mutable_data<T>();
 
     int N = output_0dim;
     int post = segmentGradsInput.size_from_dim(1);

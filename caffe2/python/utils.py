@@ -1,33 +1,44 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 ## @package utils
 # Module caffe2.python.utils
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
+
 from caffe2.proto import caffe2_pb2
 from future.utils import viewitems
 from google.protobuf.message import DecodeError, Message
 from google.protobuf import text_format
+
 import sys
+import copy
 import collections
 import functools
 import numpy as np
 from six import integer_types, binary_type, text_type
+
+
+def OpAlmostEqual(op_a, op_b, ignore_fields=None):
+    '''
+    Two ops are identical except for each field in the `ignore_fields`.
+    '''
+    ignore_fields = ignore_fields or []
+    if not isinstance(ignore_fields, list):
+        ignore_fields = [ignore_fields]
+
+    assert all(isinstance(f, text_type) for f in ignore_fields), (
+        'Expect each field is text type, but got {}'.format(ignore_fields))
+
+    def clean_op(op):
+        op = copy.deepcopy(op)
+        for field in ignore_fields:
+            if op.HasField(field):
+                op.ClearField(field)
+        return op
+
+    op_a = clean_op(op_a)
+    op_b = clean_op(op_b)
+    return op_a == op_b
 
 
 def CaffeBlobToNumpyArray(blob):
@@ -290,9 +301,11 @@ class DebugMode(object):
             sys.exit(1)
             raise
 
+
 def raiseIfNotEqual(a, b, msg):
     if a != b:
         raise Exception("{}. {} != {}".format(msg, a, b))
+
 
 def debug(f):
     '''

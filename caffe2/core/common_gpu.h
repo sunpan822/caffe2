@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #ifndef CAFFE2_CORE_COMMON_GPU_H_
 #define CAFFE2_CORE_COMMON_GPU_H_
 
@@ -283,8 +267,12 @@ constexpr int CAFFE_MAXIMUM_NUM_BLOCKS = 4096;
  * @brief Compute the number of blocks needed to run N threads.
  */
 inline int CAFFE_GET_BLOCKS(const int N) {
-  return std::min((N + CAFFE_CUDA_NUM_THREADS - 1) / CAFFE_CUDA_NUM_THREADS,
-                  CAFFE_MAXIMUM_NUM_BLOCKS);
+  return std::max(
+      std::min(
+          (N + CAFFE_CUDA_NUM_THREADS - 1) / CAFFE_CUDA_NUM_THREADS,
+          CAFFE_MAXIMUM_NUM_BLOCKS),
+      // Use at least 1 block, since CUDA does not allow empty block
+      1);
 }
 
 class DeviceGuard {

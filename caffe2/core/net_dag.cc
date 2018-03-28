@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #include "caffe2/core/net_dag.h"
 
 #include <iostream>
@@ -193,12 +177,12 @@ void DAGNetBase::HandleException(
       operator_nodes_[operator_idx].operator_->debug_def().name();
   const std::string& operator_type =
       operator_nodes_[operator_idx].operator_->debug_def().type();
-  const char* prefix = "Exception from operator '";
+  const char* prefix = "Exception from operator chain starting at '";
 #ifdef CAFFE2_USE_EXCEPTION_PTR
   if (!caught_exception_yet_.exchange(true)) {
     caught_exception_ = std::current_exception();
   } else {
-    prefix = "Secondary exception from operator '";
+    prefix = "Secondary exception from operator chain starting at '";
   }
 #endif // CAFFE2_USE_EXCEPTION_PTR
   LOG(ERROR) << prefix << operator_name << "' (type '" << operator_type
@@ -228,7 +212,7 @@ void DAGNetBase::WorkerFunction() {
           task_timers_[idx]->MicroSeconds());
     }
 
-    VLOG(1) << "Running operator #" << idx << " "
+    VLOG(1) << "Running chain starting at operator #" << idx << " "
             << operator_nodes_[idx].operator_->debug_def().name() << "("
             << operator_nodes_[idx].operator_->debug_def().type() << ").";
     CAFFE_ENFORCE(
@@ -244,7 +228,7 @@ void DAGNetBase::WorkerFunction() {
       if (!this_success) {
         // If an exception was thrown, the operator def will get printed
         // by Operator::Run[Async], but if no exception occurs we print it here.
-        LOG(ERROR) << "Operator chain failed: "
+        LOG(ERROR) << "Operator chain failed starting at: "
                    << ProtoDebugString(
                           operator_nodes_[idx].operator_->debug_def());
       }

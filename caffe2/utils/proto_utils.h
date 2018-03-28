@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #ifndef CAFFE2_UTILS_PROTO_UTILS_H_
 #define CAFFE2_UTILS_PROTO_UTILS_H_
 
@@ -73,9 +57,7 @@ inline bool ParseFromString(const string& spec, MessageLite* proto) {
 } // namespace TextFormat
 
 
-inline string ProtoDebugString(const MessageLite& proto) {
-  return proto.SerializeAsString();
-}
+string ProtoDebugString(const MessageLite& proto);
 
 bool ParseProtoFromLargeString(const string& str, MessageLite* proto);
 
@@ -121,11 +103,9 @@ namespace TextFormat {
 bool ParseFromString(const string& spec, Message* proto);
 } // namespace TextFormat
 
-bool ParseProtoFromLargeString(const string& str, Message* proto);
+string ProtoDebugString(const Message& proto);
 
-inline string ProtoDebugString(const Message& proto) {
-  return proto.ShortDebugString();
-}
+bool ParseProtoFromLargeString(const string& str, Message* proto);
 
 bool ReadProtoFromTextFile(const char* filename, Message* proto);
 inline bool ReadProtoFromTextFile(const string filename, Message* proto) {
@@ -320,6 +300,7 @@ inline void AddArgument(const string& name, const T& value, OperatorDef* def) {
 bool inline operator==(const DeviceOption& dl, const DeviceOption& dr) {
   return IsSameDevice(dl, dr);
 }
+
 
 } // namespace caffe2
 

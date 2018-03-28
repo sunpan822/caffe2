@@ -1,18 +1,3 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -1746,8 +1731,9 @@ class TestLayers(LayersTestCase):
         schema.FeedRecord(
             input_record, [np.array(x).astype(np.float32) for x in data]
         )
-        half_life = int(np.random.random() * 1e2)
-        quad_life = int(np.random.random() * 1e3 + 2 * half_life)
+        # ensure: quad_life > 2 * half_life
+        half_life = int(np.random.random() * 1e2 + 1)
+        quad_life = int(np.random.random() * 1e3 + 2 * half_life + 1)
         result = self.model.HomotopyWeight(
             input_record,
             min_weight=0.,
@@ -1770,3 +1756,42 @@ class TestLayers(LayersTestCase):
         npt.assert_allclose(
             expected_quad_life_result, quad_life_result, atol=1e-2, rtol=1e-2
         )
+
+    def _testLabelSmooth(self, categories, binary_prob_label, bsz):
+        label = self.new_record(schema.Scalar((np.float32, (1, ))))
+        label_np = np.random.randint(categories, size=bsz).astype(np.float32)
+        schema.FeedRecord(label, [label_np])
+        smooth_matrix_shape = (
+            2 if binary_prob_label else (categories, categories)
+        )
+        smooth_matrix = np.random.random(smooth_matrix_shape)
+        smoothed_label = self.model.LabelSmooth(label, smooth_matrix)
+        train_init_net, train_net = self.get_training_nets(True)
+        workspace.RunNetOnce(train_init_net)
+        workspace.RunNetOnce(train_net)
+        smoothed_label_np = workspace.FetchBlob(smoothed_label())
+        if binary_prob_label:
+            expected = np.array(
+                [
+                    smooth_matrix[0] if x == 0.0 else smooth_matrix[1]
+                    for x in label_np
+                ]
+            )
+        else:
+            expected = np.array([smooth_matrix[int(x)] for x in label_np])
+        npt.assert_allclose(expected, smoothed_label_np, atol=1e-4, rtol=1e-4)
+
+    @given(
+        categories=st.integers(min_value=2, max_value=10),
+        bsz=st.integers(min_value=10, max_value=100),
+        **hu.gcs
+    )
+    def testLabelSmoothForCategoricalLabel(self, categories, bsz, gc, dc):
+        self._testLabelSmooth(categories, False, bsz)
+
+    @given(
+        bsz=st.integers(min_value=10, max_value=100),
+        **hu.gcs
+    )
+    def testLabelSmoothForBinaryProbLabel(self, bsz, gc, dc):
+        self._testLabelSmooth(2, True, bsz)

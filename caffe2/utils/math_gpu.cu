@@ -1,19 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 // Implements the math functions for CPU.
 
 #include "caffe2/utils/math.h"
@@ -1070,27 +1054,27 @@ __global__ void SumConvertKernel(float* sum, T* dest) {
   *dest = convert::To<float, T>(*sum);
 }
 
-template <typename FloatIterT>
-void SumFloatIter(
+template <typename T, typename IterT>
+void SumGenericIter(
     const int N,
-    FloatIterT it,
-    float*& dest,
+    IterT it,
+    T*& dest,
     CUDAContext* context,
     Tensor<CUDAContext>* scratch_ptr) {
   size_t memRequired = 0;
   cub::DeviceReduce::Sum(
       nullptr, memRequired, it, dest, N, context->cuda_stream());
   auto buffer_size =
-      static_cast<TIndex>((memRequired + sizeof(float) - 1) / sizeof(float));
+      static_cast<TIndex>((memRequired + sizeof(T) - 1) / sizeof(T));
   if (!dest) {
-    // allocate one more float at the end of scratch for dest
+    // allocate one more T at the end of scratch for dest
     scratch_ptr->Resize(std::vector<TIndex>{buffer_size + 1});
-    dest = scratch_ptr->template mutable_data<float>() + buffer_size;
+    dest = scratch_ptr->template mutable_data<T>() + buffer_size;
   } else {
     scratch_ptr->Resize(std::vector<TIndex>{buffer_size});
   }
   cub::DeviceReduce::Sum(
-      static_cast<void*>(scratch_ptr->template mutable_data<float>()),
+      static_cast<void*>(scratch_ptr->template mutable_data<T>()),
       memRequired,
       it,
       dest,
@@ -1107,10 +1091,25 @@ void Sum<float, CUDAContext>(
     CUDAContext* context,
     Tensor<CUDAContext>* scratch_ptr) {
   if (scratch_ptr && N > DEVICE_REDUCE_SIZE_THRESHOLD) {
-    SumFloatIter(N, x, y, context, scratch_ptr);
+    SumGenericIter<float>(N, x, y, context, scratch_ptr);
   } else {
     SumKernel<<<1, SUM_KERNEL_NTHREADS, 0, context->cuda_stream()>>>(
       N, x, y, false);
+  }
+}
+
+template <>
+void Sum<int32_t, CUDAContext>(
+    const int N,
+    const int32_t* x,
+    int32_t* y,
+    CUDAContext* context,
+    Tensor<CUDAContext>* scratch_ptr) {
+  if (scratch_ptr && N > DEVICE_REDUCE_SIZE_THRESHOLD) {
+    SumGenericIter<int32_t>(N, x, y, context, scratch_ptr);
+  } else {
+    SumKernel<<<1, SUM_KERNEL_NTHREADS, 0, context->cuda_stream()>>>(
+        N, x, y, false);
   }
 }
 
@@ -1136,7 +1135,7 @@ struct FloatTransform {
       cub::TransformInputIterator<float, FloatTransform<T>, const T*> it( \
           x, transform);                                                  \
       float* sum = nullptr;                                               \
-      SumFloatIter(N, it, sum, context, scratch_ptr);                     \
+      SumGenericIter<float>(N, it, sum, context, scratch_ptr);            \
       SumConvertKernel<<<1, 1, 0, context->cuda_stream()>>>(sum, y);      \
     } else {                                                              \
       SumKernel<<<1, SUM_KERNEL_NTHREADS, 0, context->cuda_stream()>>>(   \
@@ -1167,7 +1166,7 @@ void SumSqr<float, CUDAContext>(
     SqrTransform<float> transform;
     cub::TransformInputIterator<float, SqrTransform<float>, const float*> it(
         x, transform);
-    SumFloatIter(N, it, y, context, scratch_ptr);
+    SumGenericIter<float>(N, it, y, context, scratch_ptr);
   } else {
     SumKernel<<<1, SUM_KERNEL_NTHREADS, 0, context->cuda_stream()>>>(
         N, x, y, true);
@@ -1193,7 +1192,7 @@ void SumSqr<float, CUDAContext>(
           decltype(float_it)>                                           \
           it(float_it, sqr_transform);                                  \
       float* sum = nullptr;                                             \
-      SumFloatIter(N, it, sum, context, scratch_ptr);                   \
+      SumGenericIter<float>(N, it, sum, context, scratch_ptr);          \
       SumConvertKernel<<<1, 1, 0, context->cuda_stream()>>>(sum, y);    \
     } else {                                                            \
       SumKernel<<<1, SUM_KERNEL_NTHREADS, 0, context->cuda_stream()>>>( \

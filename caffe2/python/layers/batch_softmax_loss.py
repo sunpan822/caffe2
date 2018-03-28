@@ -1,18 +1,3 @@
-# Copyright (c) 2016-present, Facebook, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##############################################################################
-
 ## @package batch_softmax_loss
 # Module caffe2.python.layers.batch_softmax_loss
 from __future__ import absolute_import
@@ -32,6 +17,7 @@ class BatchSoftmaxLoss(ModelLayer):
         input_record,
         name='batch_softmax_loss',
         label_smoothing_matrix=None,
+        label_prob=False,
         **kwargs
     ):
         super(BatchSoftmaxLoss, self).__init__(
@@ -44,8 +30,7 @@ class BatchSoftmaxLoss(ModelLayer):
             ),
             input_record
         )
-        # default case: label is given NOT as target distribution
-        self.label_prob = False
+        self.label_prob = label_prob
 
         # label smoothing matrix: a K * K matrix where K is the label
         # cardinality; (i, j) element is the value of for label i
@@ -86,6 +71,8 @@ class BatchSoftmaxLoss(ModelLayer):
             array=label_dim,
             dtype=np.dtype(np.int64),
         )
+        # default case: label is given NOT as target distribution
+        # but when used in label smoothing, the label must be in probabilities
         self.label_prob = True
 
     def compute_smoothed_label(self, net):
@@ -105,15 +92,15 @@ class BatchSoftmaxLoss(ModelLayer):
 
     def add_ops(self, net):
         label = self.input_record.label.field_blobs()
-        if self.label_smoothing_matrix is None:
+        if self.label_smoothing_matrix is not None:
+            label = [self.compute_smoothed_label(net)]
+        elif not self.label_prob:
             if self.input_record.label.field_types()[0].base != np.int32:
                 label = [
                     net.Cast(label,
                              net.NextScopedBlob('int32_label'),
                              to=core.DataType.INT32)
                 ]
-        else:
-            label = [self.compute_smoothed_label(net)]
 
         softmax_input = self.input_record.prediction.field_blobs() + label
 

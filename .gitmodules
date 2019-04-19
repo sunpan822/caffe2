@@ -7,8 +7,8 @@
 [submodule "third_party/cub"]
 	path = third_party/cub
 	url = https://github.com/NVlabs/cub.git
-[submodule "third_party/eigen"]
-	path = third_party/eigen
+[submodule "third_party/eigen-git-mirror"]
+	path = third_party/eigen-git-mirror
 	url = https://github.com/eigenteam/eigen-git-mirror.git
 [submodule "third_party/googletest"]
 	path = third_party/googletest
